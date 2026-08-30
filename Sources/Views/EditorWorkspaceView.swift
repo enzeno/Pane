@@ -5,8 +5,6 @@ struct EditorWorkspaceView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !session.tabs.isEmpty { tabBar }
-            Divider()
             if let tab = session.selectedTab {
                 tabContent(tab)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -25,13 +23,30 @@ struct EditorWorkspaceView: View {
         .background(Color(nsColor: .textBackgroundColor))
     }
 
-    private var tabBar: some View {
+    @ViewBuilder
+    private func tabContent(_ tab: EditorTab) -> some View {
+        switch tab.content {
+        case .file(let document):
+            FileTabView(document: document, session: session)
+        case .diff(let diff):
+            DiffTabView(diff: diff, session: session)
+        case .commit(let detail):
+            CommitDetailView(detail: detail)
+        }
+    }
+
+}
+
+struct EditorTabStrip: View {
+    @Bindable var session: RepositorySession
+
+    var body: some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 0) {
+            HStack(spacing: 4) {
                 ForEach(session.tabs) { tab in
                     HStack(spacing: 7) {
                         Image(systemName: icon(for: tab))
-                            .foregroundStyle(session.selectedTabID == tab.id ? Color.accentColor : Color(nsColor: .secondaryLabelColor))
+                            .foregroundStyle(session.selectedTabID == tab.id ? Color.accentColor : .secondary)
                         Text(tab.title).lineLimit(1)
                         if tab.isDirty {
                             Circle().fill(.secondary).frame(width: 7, height: 7)
@@ -44,35 +59,24 @@ struct EditorWorkspaceView: View {
                     }
                     .font(.system(size: 12))
                     .padding(.horizontal, 10)
-                    .frame(minWidth: 110, maxWidth: 240, minHeight: 36, maxHeight: 36)
-                    .background(session.selectedTabID == tab.id ? Color(nsColor: .textBackgroundColor) : .clear)
+                    .frame(minWidth: 110, maxWidth: 220, minHeight: 36, maxHeight: 36)
+                    .background {
+                        Capsule().fill(session.selectedTabID == tab.id ? Color.primary.opacity(0.07) : .clear)
+                    }
                     .overlay(alignment: .bottom) {
                         if session.selectedTabID == tab.id {
-                            Rectangle().fill(.tint).frame(height: 1.5)
+                            Capsule().fill(.tint).frame(height: 2).padding(.horizontal, 12)
                         }
                     }
-                    .contentShape(Rectangle())
+                    .clipShape(Capsule())
+                    .contentShape(Capsule())
                     .onTapGesture { session.selectedTabID = tab.id }
-                    Divider()
                 }
             }
         }
         .frame(height: 36)
         .fixedSize(horizontal: false, vertical: true)
         .scrollIndicators(.hidden)
-        .background(Color(nsColor: .windowBackgroundColor))
-    }
-
-    @ViewBuilder
-    private func tabContent(_ tab: EditorTab) -> some View {
-        switch tab.content {
-        case .file(let document):
-            FileTabView(document: document, session: session)
-        case .diff(let diff):
-            DiffTabView(diff: diff, session: session)
-        case .commit(let detail):
-            CommitDetailView(detail: detail)
-        }
     }
 
     private func icon(for tab: EditorTab) -> String {

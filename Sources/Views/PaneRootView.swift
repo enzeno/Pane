@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -32,6 +33,7 @@ struct PaneRootView: View {
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .background(ToolbarSeparatorSuppressor())
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button {
@@ -40,12 +42,27 @@ struct PaneRootView: View {
                     Label(session.rootURL?.lastPathComponent ?? "Open Repository", systemImage: "folder")
                 }
             }
+            if session.rootURL != nil, !session.tabs.isEmpty {
+                ToolbarItem(placement: .principal) {
+                    EditorTabStrip(session: session)
+                        .frame(minWidth: 320, idealWidth: 720, maxWidth: 960)
+                }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .paneQuickOpen)) { _ in
-            withAnimation(.easeOut(duration: 0.12)) { session.toggleQuickOpen() }
+            withAnimation(.easeOut(duration: 0.06)) { session.toggleQuickOpen() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .paneSave)) { _ in session.saveSelected() }
         .onReceive(NotificationCenter.default.publisher(for: .paneOpenRepository)) { _ in session.chooseRepository() }
+        .onReceive(NotificationCenter.default.publisher(for: .paneSelectNextTab)) { _ in
+            session.selectAdjacentTab(offset: 1)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .paneSelectPreviousTab)) { _ in
+            session.selectAdjacentTab(offset: -1)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .paneCloseCurrentTab)) { _ in
+            if let selectedTabID = session.selectedTabID { session.closeTab(selectedTabID) }
+        }
         .dropDestination(for: URL.self) { urls, _ in
             session.handleDrop(urls)
             return true
@@ -61,10 +78,11 @@ struct PaneRootView: View {
         .task {
             guard !didRestoreRepository else { return }
             didRestoreRepository = true
-            if let path = ProcessInfo.processInfo.arguments.dropFirst().first(where: {
-                $0.hasPrefix("/") && FileManager.default.fileExists(atPath: $0)
-            }) {
-                session.handleDrop([URL(fileURLWithPath: path)])
+            let launchURLs = ProcessInfo.processInfo.arguments.dropFirst()
+                .filter { $0.hasPrefix("/") }
+                .map { URL(fileURLWithPath: $0) }
+            if !launchURLs.isEmpty {
+                await session.openLaunchFiles(launchURLs)
                 return
             }
             if let recent = session.recentRepositories.first {
@@ -78,6 +96,35 @@ struct PaneRootView: View {
             Button("OK", role: .cancel) { session.errorMessage = nil }
         } message: {
             Text(session.errorMessage ?? "Unknown error")
+        }
+    }
+}
+
+private struct ToolbarSeparatorSuppressor: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        ToolbarSeparatorSuppressingView()
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? ToolbarSeparatorSuppressingView)?.suppressSeparators()
+    }
+}
+
+private final class ToolbarSeparatorSuppressingView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window?.toolbar != nil else { return }
+        suppressSeparators()
+        Task { @MainActor [weak self] in
+            self?.suppressSeparators()
+        }
+    }
+
+    func suppressSeparators() {
+        guard let toolbar = window?.toolbar else { return }
+        for index in toolbar.items.indices.reversed()
+        where toolbar.items[index] is NSTrackingSeparatorToolbarItem {
+            toolbar.removeItem(at: index)
         }
     }
 }

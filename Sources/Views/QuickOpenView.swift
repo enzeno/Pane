@@ -92,7 +92,7 @@ struct QuickOpenView: View {
     }
 
     private func dismiss() {
-        withAnimation(.easeOut(duration: 0.12)) { session.quickOpenPresented = false }
+        withAnimation(.easeOut(duration: 0.06)) { session.quickOpenPresented = false }
     }
 }
 

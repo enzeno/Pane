@@ -6,6 +6,9 @@ extension Notification.Name {
     static let paneQuickOpen = Notification.Name("Pane.quickOpen")
     static let paneSave = Notification.Name("Pane.save")
     static let paneOpenRepository = Notification.Name("Pane.openRepository")
+    static let paneSelectNextTab = Notification.Name("Pane.selectNextTab")
+    static let paneSelectPreviousTab = Notification.Name("Pane.selectPreviousTab")
+    static let paneCloseCurrentTab = Notification.Name("Pane.closeCurrentTab")
 }
 
 @MainActor
@@ -266,6 +269,16 @@ final class RepositorySession {
         }
     }
 
+    func selectAdjacentTab(offset: Int) {
+        guard !tabs.isEmpty else { return }
+        guard let selectedTabID, let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) else {
+            self.selectedTabID = offset < 0 ? tabs.last?.id : tabs.first?.id
+            return
+        }
+        let nextIndex = (currentIndex + offset % tabs.count + tabs.count) % tabs.count
+        self.selectedTabID = tabs[nextIndex].id
+    }
+
     func saveSelected() {
         guard let selectedTab, case .file(let document) = selectedTab.content else { return }
         save(document)
@@ -291,6 +304,57 @@ final class RepositorySession {
                 Task { await openFile(url: url) }
             }
         }
+    }
+
+    func openLaunchFiles(_ urls: [URL]) async {
+        guard !urls.isEmpty else { return }
+        let fileManager = FileManager.default
+        var files: [URL] = []
+        var requestedRepository: URL?
+
+        for rawURL in urls {
+            let url = rawURL.standardizedFileURL
+            var isDirectory: ObjCBool = false
+            if fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
+                requestedRepository = requestedRepository ?? url
+                continue
+            }
+            if !fileManager.fileExists(atPath: url.path) {
+                guard fileManager.fileExists(atPath: url.deletingLastPathComponent().path),
+                      fileManager.createFile(atPath: url.path, contents: Data()) else {
+                    errorMessage = "Pane could not create \(url.path)."
+                    return
+                }
+            }
+            files.append(url)
+            requestedRepository = requestedRepository ?? enclosingRepository(for: url)
+        }
+
+        if let requestedRepository {
+            await openRepository(requestedRepository)
+        } else if rootURL == nil, let recent = recentRepositories.first {
+            await openRepository(recent)
+        }
+
+        guard rootURL != nil else {
+            errorMessage = "Pane could not find a Git repository containing the requested file."
+            return
+        }
+        for file in files { await openFile(url: file) }
+    }
+
+    private func enclosingRepository(for fileURL: URL) -> URL? {
+        let fileManager = FileManager.default
+        var candidate = fileURL.deletingLastPathComponent().standardizedFileURL
+        while candidate.path != "/" {
+            if fileManager.fileExists(atPath: candidate.appendingPathComponent(".git").path) {
+                return candidate
+            }
+            let parent = candidate.deletingLastPathComponent()
+            if parent == candidate { break }
+            candidate = parent
+        }
+        return nil
     }
 
     func stage(_ change: GitFileChange) async {
