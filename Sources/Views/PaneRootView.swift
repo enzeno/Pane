@@ -4,13 +4,14 @@ import UniformTypeIdentifiers
 struct PaneRootView: View {
     @State private var session = RepositorySession()
     @State private var didRestoreRepository = false
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
         ZStack {
             if session.rootURL == nil {
                 WelcomeView(session: session)
             } else {
-                NavigationSplitView {
+                NavigationSplitView(columnVisibility: $columnVisibility) {
                     VSplitView {
                         SourceControlView(session: session)
                             .frame(minHeight: 280)
@@ -21,11 +22,12 @@ struct PaneRootView: View {
                 } detail: {
                     EditorWorkspaceView(session: session)
                 }
+                .navigationSplitViewStyle(.balanced)
             }
 
             if session.quickOpenPresented {
                 QuickOpenView(session: session)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    .transition(.opacity)
                     .zIndex(20)
             }
         }
@@ -38,17 +40,9 @@ struct PaneRootView: View {
                     Label(session.rootURL?.lastPathComponent ?? "Open Repository", systemImage: "folder")
                 }
             }
-            if let operation = session.activeOperation {
-                ToolbarItem(placement: .status) {
-                    HStack(spacing: 7) {
-                        ProgressView().controlSize(.small)
-                        Text(operation).font(.caption)
-                    }
-                }
-            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .paneQuickOpen)) { _ in
-            withAnimation(.snappy(duration: 0.16)) { session.presentQuickOpen() }
+            withAnimation(.easeOut(duration: 0.12)) { session.toggleQuickOpen() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .paneSave)) { _ in session.saveSelected() }
         .onReceive(NotificationCenter.default.publisher(for: .paneOpenRepository)) { _ in session.chooseRepository() }
@@ -58,6 +52,11 @@ struct PaneRootView: View {
         }
         .onOpenURL { url in
             session.handleDrop([url])
+        }
+        .onChange(of: session.rootURL) { _, rootURL in
+            if rootURL != nil {
+                columnVisibility = .all
+            }
         }
         .task {
             guard !didRestoreRepository else { return }

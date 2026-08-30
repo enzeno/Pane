@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct QuickOpenView: View {
@@ -58,8 +59,12 @@ struct QuickOpenView: View {
                 }
             }
             .frame(width: 680, height: 500)
-            .background(Color(nsColor: .windowBackgroundColor).opacity(0.72))
+            .background(
+                Color(nsColor: .windowBackgroundColor).opacity(0.72),
+                in: .rect(cornerRadius: 18)
+            )
             .glassEffect(.regular, in: .rect(cornerRadius: 18))
+            .clipShape(.rect(cornerRadius: 18))
             .shadow(color: .black.opacity(0.28), radius: 34, y: 18)
             .onKeyPress(.downArrow) {
                 session.quickOpenSelection = min(session.quickOpenSelection + 1, max(0, session.quickOpenResults.count - 1))
@@ -74,11 +79,70 @@ struct QuickOpenView: View {
                 return .handled
             }
         }
-        .task { searchFocused = true }
+        .onExitCommand(perform: dismiss)
+        .background {
+            QuickOpenKeyMonitor(onDismiss: dismiss)
+                .frame(width: 0, height: 0)
+        }
+        .task {
+            try? await Task.sleep(for: .milliseconds(40))
+            guard !Task.isCancelled else { return }
+            searchFocused = true
+        }
     }
 
     private func dismiss() {
-        withAnimation(.snappy(duration: 0.14)) { session.quickOpenPresented = false }
+        withAnimation(.easeOut(duration: 0.12)) { session.quickOpenPresented = false }
     }
 }
 
+private struct QuickOpenKeyMonitor: NSViewRepresentable {
+    let onDismiss: @MainActor () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onDismiss: onDismiss)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        context.coordinator.start()
+        return NSView(frame: .zero)
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.stop()
+    }
+
+    final class Coordinator: @unchecked Sendable {
+        private let onDismiss: @MainActor () -> Void
+        private var monitor: Any?
+
+        init(onDismiss: @escaping @MainActor () -> Void) {
+            self.onDismiss = onDismiss
+        }
+
+        func start() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                let togglesQuickOpen = event.charactersIgnoringModifiers?.lowercased() == "p"
+                    && (modifiers.contains(.control) || modifiers.contains(.command))
+                guard event.keyCode == 53 || togglesQuickOpen else { return event }
+                Task { @MainActor in self?.onDismiss() }
+                return nil
+            }
+        }
+
+        func stop() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+        }
+
+        deinit {
+            stop()
+        }
+    }
+}

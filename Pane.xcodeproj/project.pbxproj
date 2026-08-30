@@ -20,6 +20,7 @@
 		A797CD37B2D3D814FC14DCF6 /* GitStatusParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05053AB7265DA7BEB5D1AEFE /* GitStatusParserTests.swift */; };
 		AF7E59D8186F5E16D164F747 /* FileIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA8FED87717B3812205D70DE /* FileIndex.swift */; };
 		BAA74B61DC0DC9966CC71489 /* GitRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EE43A422DEBFF37ED63909C /* GitRepository.swift */; };
+		C03B241956A837A690FB70DF /* RepositoryWatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E3B9F0DF8A87953C32F7BC5 /* RepositoryWatcherTests.swift */; };
 		CAAE18D747495AB2B9B6ED27 /* CodeEditLanguages in Frameworks */ = {isa = PBXBuildFile; productRef = 6FE57C7483C6AFDE4D5CDCE6 /* CodeEditLanguages */; };
 		CB948E3625D81F49C90B6DF4 /* GitRepositoryIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D79D9DFF0455D2E0A6F181BA /* GitRepositoryIntegrationTests.swift */; };
 		D0F0AD6FE911A50B9A0CB6D2 /* RepositoryWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD163B0AA460FE28FD5E67AD /* RepositoryWatcher.swift */; };
@@ -54,6 +55,7 @@
 		60E380742DA076729E10CF3F /* QuickOpenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickOpenView.swift; sourceTree = "<group>"; };
 		793E774C57E846BD782BE158 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		85DB092DFC827DD3B53990AE /* RepositorySession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositorySession.swift; sourceTree = "<group>"; };
+		8E3B9F0DF8A87953C32F7BC5 /* RepositoryWatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryWatcherTests.swift; sourceTree = "<group>"; };
 		8E7AC539E22F3D2C76727859 /* SyntaxHighlighter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntaxHighlighter.swift; sourceTree = "<group>"; };
 		9E99BEEEE0A7FD0ED83E92F3 /* EditorWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorWorkspaceView.swift; sourceTree = "<group>"; };
 		9EE43A422DEBFF37ED63909C /* GitRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitRepository.swift; sourceTree = "<group>"; };
@@ -113,6 +115,7 @@
 				E72001883207B0FE0E38C5EE /* FileIndexTests.swift */,
 				D79D9DFF0455D2E0A6F181BA /* GitRepositoryIntegrationTests.swift */,
 				05053AB7265DA7BEB5D1AEFE /* GitStatusParserTests.swift */,
+				8E3B9F0DF8A87953C32F7BC5 /* RepositoryWatcherTests.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -279,6 +282,7 @@
 				9875216E1A672853046765EF /* FileIndexTests.swift in Sources */,
 				CB948E3625D81F49C90B6DF4 /* GitRepositoryIntegrationTests.swift in Sources */,
 				A797CD37B2D3D814FC14DCF6 /* GitStatusParserTests.swift in Sources */,
+				C03B241956A837A690FB70DF /* RepositoryWatcherTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

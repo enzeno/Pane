@@ -23,7 +23,6 @@ final class RepositorySession {
     var quickOpenResults: [FileSearchResult] = []
     var quickOpenSelection = 0
     var isRefreshing = false
-    var activeOperation: String?
     var errorMessage: String?
     var graphLimit = 500
 
@@ -31,6 +30,9 @@ final class RepositorySession {
     private var fileIndex = FileIndex()
     private var watcher: RepositoryWatcher?
     private var refreshTask: Task<Void, Never>?
+    private var pendingRefreshKind: RepositoryChangeKind?
+    private var indexMutationGeneration = 0
+    private var inFlightIndexMutationCount = 0
     let syntaxHighlighter = SyntaxHighlighter()
 
     var selectedTab: EditorTab? {
@@ -71,8 +73,8 @@ final class RepositorySession {
             selectedTabID = nil
             graphLimit = 500
             rememberRepository(validated)
-            watcher = RepositoryWatcher(url: validated) { [weak self] in
-                Task { @MainActor in self?.scheduleRefresh() }
+            watcher = RepositoryWatcher(url: validated) { [weak self] kind in
+                Task { @MainActor in self?.scheduleRefresh(for: kind) }
             }
             await refreshAll()
         } catch {
@@ -102,13 +104,59 @@ final class RepositorySession {
         }
     }
 
-    func scheduleRefresh() {
+    func refreshStatus() async {
+        guard let repository else { return }
+        let generation = indexMutationGeneration
+        do {
+            let loadedStatus = try await repository.status()
+            guard generation == indexMutationGeneration, inFlightIndexMutationCount == 0 else {
+                scheduleRefresh(for: .index)
+                return
+            }
+            status = loadedStatus
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func refreshWorkingTree() async {
+        guard let repository else { return }
+        do {
+            async let nextStatus = repository.status()
+            async let nextFiles = repository.trackedAndUntrackedFiles()
+            let (loadedStatus, loadedFiles) = try await (nextStatus, nextFiles)
+            status = loadedStatus
+            await fileIndex.replace(paths: loadedFiles)
+            if quickOpenPresented { await updateQuickOpen(query: quickOpenQuery) }
+            await checkExternalFileChanges()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func scheduleRefresh(for kind: RepositoryChangeKind = .workingTree) {
+        if let pendingRefreshKind {
+            self.pendingRefreshKind = max(pendingRefreshKind, kind)
+        } else {
+            pendingRefreshKind = kind
+        }
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(260))
+            try? await Task.sleep(for: .milliseconds(140))
             guard !Task.isCancelled else { return }
-            await self?.refreshAll()
-            await self?.checkExternalFileChanges()
+            guard let self, let pendingRefreshKind = self.pendingRefreshKind else { return }
+            if pendingRefreshKind == .index, self.inFlightIndexMutationCount > 0 {
+                return
+            }
+            self.pendingRefreshKind = nil
+            switch pendingRefreshKind {
+            case .index:
+                await self.refreshStatus()
+            case .history:
+                await self.refreshAll()
+            case .workingTree:
+                await self.refreshWorkingTree()
+            }
         }
     }
 
@@ -118,6 +166,14 @@ final class RepositorySession {
         quickOpenSelection = 0
         quickOpenPresented = true
         Task { await updateQuickOpen(query: "") }
+    }
+
+    func toggleQuickOpen() {
+        if quickOpenPresented {
+            quickOpenPresented = false
+        } else {
+            presentQuickOpen()
+        }
     }
 
     func updateQuickOpen(query: String) async {
@@ -221,7 +277,7 @@ final class RepositorySession {
             try DocumentIO.save(document)
             document.originalText = document.text
             document.externalChangeDetected = false
-            scheduleRefresh()
+            scheduleRefresh(for: .workingTree)
         } catch { errorMessage = error.localizedDescription }
     }
 
@@ -237,10 +293,25 @@ final class RepositorySession {
         }
     }
 
-    func stage(_ change: GitFileChange) async { await runOperation("Staging") { try await $0.stage(path: change.path) } }
-    func unstage(_ change: GitFileChange) async { await runOperation("Unstaging") { try await $0.unstage(path: change.path) } }
-    func stageAll() async { await runOperation("Staging all") { try await $0.stageAll() } }
-    func unstageAll() async { await runOperation("Unstaging all") { try await $0.unstageAll() } }
+    func stage(_ change: GitFileChange) async {
+        optimisticallyStage(change)
+        await runIndexOperation { try await $0.stage(path: change.path) }
+    }
+
+    func unstage(_ change: GitFileChange) async {
+        optimisticallyUnstage(change)
+        await runIndexOperation { try await $0.unstage(path: change.path) }
+    }
+
+    func stageAll() async {
+        for change in status.unstaged { optimisticallyStage(change) }
+        await runIndexOperation { try await $0.stageAll() }
+    }
+
+    func unstageAll() async {
+        for change in status.staged { optimisticallyUnstage(change) }
+        await runIndexOperation { try await $0.unstageAll() }
+    }
 
     func commit() async {
         let message = commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -265,15 +336,49 @@ final class RepositorySession {
         await refreshAll()
     }
 
-    private func runOperation(_ name: String, operation: @escaping @Sendable (GitRepository) async throws -> Void) async {
+    private func runOperation(_: String, operation: @escaping @Sendable (GitRepository) async throws -> Void) async {
         guard let repository else { return }
-        activeOperation = name
         errorMessage = nil
         do {
             try await operation(repository)
             await refreshAll()
         } catch { errorMessage = error.localizedDescription }
-        activeOperation = nil
+    }
+
+    private func runIndexOperation(
+        _ operation: @escaping @Sendable (GitRepository) async throws -> Void
+    ) async {
+        guard let repository else { return }
+        indexMutationGeneration += 1
+        inFlightIndexMutationCount += 1
+        errorMessage = nil
+        do {
+            try await operation(repository)
+            inFlightIndexMutationCount -= 1
+            if inFlightIndexMutationCount == 0 {
+                scheduleRefresh(for: .index)
+            }
+        } catch {
+            inFlightIndexMutationCount -= 1
+            errorMessage = error.localizedDescription
+            if inFlightIndexMutationCount == 0 {
+                await refreshStatus()
+            }
+        }
+    }
+
+    private func optimisticallyStage(_ change: GitFileChange) {
+        status.unstaged.removeAll { $0.path == change.path }
+        status.staged.removeAll { $0.path == change.path }
+        status.staged.append(change.moving(to: .staged))
+        status.staged.sort { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+    }
+
+    private func optimisticallyUnstage(_ change: GitFileChange) {
+        status.staged.removeAll { $0.path == change.path }
+        guard !status.unstaged.contains(where: { $0.path == change.path }) else { return }
+        status.unstaged.append(change.moving(to: .unstaged))
+        status.unstaged.sort { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }
 
     private func rememberRepository(_ url: URL) {

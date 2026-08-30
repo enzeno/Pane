@@ -37,6 +37,11 @@ struct GitFileChange: Identifiable, Hashable, Sendable {
         let parent = URL(fileURLWithPath: path).deletingLastPathComponent().path
         return parent == "." ? "" : parent
     }
+
+    func moving(to area: GitChangeArea) -> GitFileChange {
+        let movedKind: GitChangeKind = area == .unstaged && kind == .added ? .untracked : kind
+        return GitFileChange(path: path, originalPath: originalPath, kind: movedKind, area: area)
+    }
 }
 
 struct GitStatusSnapshot: Sendable, Equatable {
@@ -99,4 +104,3 @@ struct SyntaxUpdate: Sendable {
     let affectedRange: NSRange
     let spans: [SyntaxSpan]
 }
-

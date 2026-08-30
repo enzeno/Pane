@@ -9,6 +9,7 @@ struct EditorWorkspaceView: View {
             Divider()
             if let tab = session.selectedTab {
                 tabContent(tab)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ContentUnavailableView {
                     Label("Open a File", systemImage: "doc.text")
@@ -43,7 +44,7 @@ struct EditorWorkspaceView: View {
                     }
                     .font(.system(size: 12))
                     .padding(.horizontal, 10)
-                    .frame(height: 36)
+                    .frame(minWidth: 110, maxWidth: 240, minHeight: 36, maxHeight: 36)
                     .background(session.selectedTabID == tab.id ? Color(nsColor: .textBackgroundColor) : .clear)
                     .overlay(alignment: .bottom) {
                         if session.selectedTabID == tab.id {
@@ -56,6 +57,8 @@ struct EditorWorkspaceView: View {
                 }
             }
         }
+        .frame(height: 36)
+        .fixedSize(horizontal: false, vertical: true)
         .scrollIndicators(.hidden)
         .background(Color(nsColor: .windowBackgroundColor))
     }
