@@ -7,6 +7,8 @@ struct PaneRootView: View {
     @State private var session = RepositorySession()
     @State private var didRestoreRepository = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var editorChromeVisible = false
+    @State private var editorRevealTask: Task<Void, Never>?
 
     var body: some View {
         ZStack {
@@ -19,10 +21,10 @@ struct PaneRootView: View {
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
-        .background(ToolbarSeparatorSuppressor())
+        .background(ToolbarSeparatorSuppressor(revision: toolbarChromeRevision))
         .background(AdaptiveWindowSize(compact: editorCollapsed))
         .toolbar {
-            if session.rootURL != nil, !session.tabs.isEmpty {
+            if session.rootURL != nil, !session.tabs.isEmpty, editorChromeVisible {
                 ToolbarItem(placement: .principal) {
                     EditorTabStrip(session: session)
                         .frame(minWidth: 320, idealWidth: 720, maxWidth: 960)
@@ -55,6 +57,12 @@ struct PaneRootView: View {
                 columnVisibility = .all
             }
         }
+        .onChange(of: session.tabs.isEmpty) { _, tabsAreEmpty in
+            updateEditorReveal(tabsAreEmpty: tabsAreEmpty)
+        }
+        .onDisappear {
+            editorRevealTask?.cancel()
+        }
         .task {
             guard !didRestoreRepository else { return }
             didRestoreRepository = true
@@ -86,11 +94,12 @@ struct PaneRootView: View {
         } detail: {
             if session.rootURL == nil {
                 WelcomeView(session: session)
-            } else if session.tabs.isEmpty {
+            } else if session.tabs.isEmpty || !editorChromeVisible {
                 Color.clear
                     .accessibilityHidden(true)
             } else {
                 EditorWorkspaceView(session: session)
+                    .transition(.opacity)
             }
         }
         .navigationSplitViewStyle(.balanced)
@@ -120,6 +129,29 @@ struct PaneRootView: View {
     private var editorCollapsed: Bool {
         session.rootURL != nil && session.tabs.isEmpty
     }
+
+    private var toolbarChromeRevision: Int {
+        (session.rootURL == nil ? 0 : 1)
+            + (session.tabs.isEmpty ? 0 : 2)
+            + (editorChromeVisible ? 4 : 0)
+    }
+
+    private func updateEditorReveal(tabsAreEmpty: Bool) {
+        editorRevealTask?.cancel()
+        guard !tabsAreEmpty else {
+            editorChromeVisible = false
+            return
+        }
+
+        editorChromeVisible = false
+        editorRevealTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(190))
+            guard !Task.isCancelled, !session.tabs.isEmpty else { return }
+            withAnimation(.easeOut(duration: 0.06)) {
+                editorChromeVisible = true
+            }
+        }
+    }
 }
 
 private struct AdaptiveWindowSize: NSViewRepresentable {
@@ -136,8 +168,8 @@ private struct AdaptiveWindowSize: NSViewRepresentable {
 
 @MainActor
 private final class AdaptiveWindowSizingView: NSView {
-    private static let compactContentWidth: CGFloat = 380
-    private static let compactMinimumWidth: CGFloat = 340
+    private static let compactContentWidth: CGFloat = 377
+    private static let compactMinimumWidth: CGFloat = 377
     private static let expandedMinimumWidth: CGFloat = 980
     private static let minimumHeight: CGFloat = 640
     private static let expandedWidthKey = "Pane.expandedWindowContentWidth"
@@ -255,19 +287,34 @@ private struct StartupSidebarSection: View {
 }
 
 private struct ToolbarSeparatorSuppressor: NSViewRepresentable {
+    let revision: Int
+
     func makeNSView(context: Context) -> NSView {
-        ToolbarSeparatorSuppressingView()
+        let view = ToolbarSeparatorSuppressingView()
+        view.setRevision(revision)
+        return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        (nsView as? ToolbarSeparatorSuppressingView)?.suppressSeparators()
+        (nsView as? ToolbarSeparatorSuppressingView)?.setRevision(revision)
     }
 }
 
 private final class ToolbarSeparatorSuppressingView: NSView {
+    private var revision: Int?
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window?.toolbar != nil else { return }
+        suppressSeparators()
+        Task { @MainActor [weak self] in
+            self?.suppressSeparators()
+        }
+    }
+
+    func setRevision(_ revision: Int) {
+        guard self.revision != revision else { return }
+        self.revision = revision
         suppressSeparators()
         Task { @MainActor [weak self] in
             self?.suppressSeparators()
@@ -279,6 +326,29 @@ private final class ToolbarSeparatorSuppressingView: NSView {
         for index in toolbar.items.indices.reversed()
         where toolbar.items[index] is NSTrackingSeparatorToolbarItem {
             toolbar.removeItem(at: index)
+        }
+        if let frameView = window?.contentView?.superview {
+            concealSidebarToggle(in: frameView)
+        }
+    }
+
+    private func concealSidebarToggle(in view: NSView) {
+        for subview in view.subviews {
+            if let button = subview as? NSButton {
+                let actionName = button.action.map(NSStringFromSelector) ?? ""
+                let metadata = [
+                    button.title,
+                    button.toolTip ?? "",
+                    button.accessibilityLabel() ?? "",
+                    actionName,
+                ]
+                if metadata.contains(where: { $0.localizedCaseInsensitiveContains("sidebar") }) {
+                    button.alphaValue = 0
+                    button.isEnabled = false
+                    button.setAccessibilityHidden(true)
+                }
+            }
+            concealSidebarToggle(in: subview)
         }
     }
 }

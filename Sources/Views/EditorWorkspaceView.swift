@@ -9,15 +9,8 @@ struct EditorWorkspaceView: View {
                 tabContent(tab)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ContentUnavailableView {
-                    Label("Open a File", systemImage: "doc.text")
-                } description: {
-                    Text("Press Control-P or drag a file here.")
-                } actions: {
-                    Button("Quick Open") { session.presentQuickOpen() }
-                        .buttonStyle(.glass)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Color.clear
+                    .accessibilityHidden(true)
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
