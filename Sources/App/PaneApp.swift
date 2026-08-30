@@ -12,7 +12,7 @@ struct PaneApp: App {
     var body: some Scene {
         WindowGroup {
             PaneRootView()
-                .frame(minWidth: 980, minHeight: 640)
+                .frame(minWidth: 340, minHeight: 640)
                 .background(AdaptiveAppIcon())
         }
         .defaultSize(width: 1_440, height: 900)

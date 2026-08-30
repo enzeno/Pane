@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -9,34 +10,7 @@ struct PaneRootView: View {
 
     var body: some View {
         ZStack {
-            NavigationSplitView(columnVisibility: $columnVisibility) {
-                VSplitView {
-                    Group {
-                        if session.rootURL == nil {
-                            StartupSidebarSection(title: "Source Control", systemImage: "arrow.triangle.branch")
-                        } else {
-                            SourceControlView(session: session)
-                        }
-                    }
-                    .frame(minHeight: 280)
-                    Group {
-                        if session.rootURL == nil {
-                            StartupSidebarSection(title: "Source Control: Graph", systemImage: "point.3.connected.trianglepath.dotted")
-                        } else {
-                            GraphView(session: session)
-                        }
-                    }
-                    .frame(minHeight: 220)
-                }
-                .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 520)
-            } detail: {
-                if session.rootURL == nil {
-                    WelcomeView(session: session)
-                } else {
-                    EditorWorkspaceView(session: session)
-                }
-            }
-            .navigationSplitViewStyle(.balanced)
+            workspace
 
             if session.quickOpenPresented {
                 QuickOpenView(session: session)
@@ -46,14 +20,8 @@ struct PaneRootView: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .background(ToolbarSeparatorSuppressor())
+        .background(AdaptiveWindowSize(compact: editorCollapsed))
         .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    session.chooseRepository()
-                } label: {
-                    Label(session.rootURL?.lastPathComponent ?? "Open Repository", systemImage: "folder")
-                }
-            }
             if session.rootURL != nil, !session.tabs.isEmpty {
                 ToolbarItem(placement: .principal) {
                     EditorTabStrip(session: session)
@@ -109,6 +77,161 @@ struct PaneRootView: View {
         } message: {
             Text(session.errorMessage ?? "Unknown error")
         }
+    }
+
+    private var workspace: some View {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            sidebar
+                .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 520)
+        } detail: {
+            if session.rootURL == nil {
+                WelcomeView(session: session)
+            } else if session.tabs.isEmpty {
+                Color.clear
+                    .accessibilityHidden(true)
+            } else {
+                EditorWorkspaceView(session: session)
+            }
+        }
+        .navigationSplitViewStyle(.balanced)
+    }
+
+    private var sidebar: some View {
+        VSplitView {
+            Group {
+                if session.rootURL == nil {
+                    StartupSidebarSection(title: "Source Control", systemImage: "arrow.triangle.branch")
+                } else {
+                    SourceControlView(session: session)
+                }
+            }
+            .frame(minHeight: 280)
+            Group {
+                if session.rootURL == nil {
+                    StartupSidebarSection(title: "Source Control: Graph", systemImage: "point.3.connected.trianglepath.dotted")
+                } else {
+                    GraphView(session: session)
+                }
+            }
+            .frame(minHeight: 220)
+        }
+    }
+
+    private var editorCollapsed: Bool {
+        session.rootURL != nil && session.tabs.isEmpty
+    }
+}
+
+private struct AdaptiveWindowSize: NSViewRepresentable {
+    let compact: Bool
+
+    func makeNSView(context: Context) -> AdaptiveWindowSizingView {
+        AdaptiveWindowSizingView(compact: compact)
+    }
+
+    func updateNSView(_ nsView: AdaptiveWindowSizingView, context: Context) {
+        nsView.setCompact(compact)
+    }
+}
+
+@MainActor
+private final class AdaptiveWindowSizingView: NSView {
+    private static let compactContentWidth: CGFloat = 380
+    private static let compactMinimumWidth: CGFloat = 340
+    private static let expandedMinimumWidth: CGFloat = 980
+    private static let minimumHeight: CGFloat = 640
+    private static let expandedWidthKey = "Pane.expandedWindowContentWidth"
+
+    private var compact: Bool
+    private var appliedCompactState: Bool?
+    private var animationGeneration = 0
+
+    init(compact: Bool) {
+        self.compact = compact
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        applyWindowSizeIfNeeded()
+    }
+
+    func setCompact(_ compact: Bool) {
+        guard self.compact != compact || appliedCompactState == nil else { return }
+        self.compact = compact
+        applyWindowSizeIfNeeded()
+    }
+
+    private func applyWindowSizeIfNeeded() {
+        guard let window, appliedCompactState != compact else { return }
+        let previousState = appliedCompactState
+        appliedCompactState = compact
+
+        let currentContentWidth = window.contentLayoutRect.width
+        if previousState == nil, !compact {
+            if currentContentWidth >= Self.expandedMinimumWidth {
+                UserDefaults.standard.set(currentContentWidth, forKey: Self.expandedWidthKey)
+            }
+            window.contentMinSize = NSSize(width: Self.expandedMinimumWidth, height: Self.minimumHeight)
+            return
+        }
+
+        if compact, currentContentWidth > Self.expandedMinimumWidth {
+            UserDefaults.standard.set(currentContentWidth, forKey: Self.expandedWidthKey)
+        }
+
+        let targetContentWidth: CGFloat
+        if compact {
+            window.contentMinSize = NSSize(width: Self.compactMinimumWidth, height: Self.minimumHeight)
+            targetContentWidth = Self.compactContentWidth
+        } else {
+            let storedWidth = UserDefaults.standard.double(forKey: Self.expandedWidthKey)
+            targetContentWidth = max(storedWidth > 0 ? storedWidth : 1_440, Self.expandedMinimumWidth)
+        }
+
+        let targetFrame = frame(forContentWidth: targetContentWidth, window: window)
+        guard abs(targetFrame.width - window.frame.width) > 1 else {
+            window.contentMinSize = NSSize(
+                width: compact ? Self.compactMinimumWidth : Self.expandedMinimumWidth,
+                height: Self.minimumHeight
+            )
+            return
+        }
+
+        animationGeneration += 1
+        let generation = animationGeneration
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.18
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            window.animator().setFrame(targetFrame, display: true)
+        }
+        guard !compact else { return }
+        Task { @MainActor [weak self, weak window] in
+            try? await Task.sleep(for: .milliseconds(190))
+            guard let self, let window,
+                  self.animationGeneration == generation,
+                  !self.compact else { return }
+            window.contentMinSize = NSSize(width: Self.expandedMinimumWidth, height: Self.minimumHeight)
+        }
+    }
+
+    private func frame(forContentWidth contentWidth: CGFloat, window: NSWindow) -> NSRect {
+        let currentFrame = window.frame
+        let currentContentFrame = window.contentRect(forFrameRect: currentFrame)
+        let frameWidth = currentFrame.width + contentWidth - currentContentFrame.width
+        var target = NSRect(x: currentFrame.minX, y: currentFrame.minY, width: frameWidth, height: currentFrame.height)
+
+        if let visibleFrame = window.screen?.visibleFrame {
+            target.size.width = min(target.width, visibleFrame.width)
+            target.origin.x = min(target.minX, visibleFrame.maxX - target.width)
+            target.origin.x = max(target.minX, visibleFrame.minX)
+        }
+        return target
     }
 }
 
