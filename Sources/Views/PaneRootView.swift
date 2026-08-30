@@ -127,7 +127,7 @@ struct PaneRootView: View {
     }
 
     private var editorCollapsed: Bool {
-        session.rootURL != nil && session.tabs.isEmpty
+        session.tabs.isEmpty
     }
 
     private var toolbarChromeRevision: Int {
@@ -205,11 +205,19 @@ private final class AdaptiveWindowSizingView: NSView {
         appliedCompactState = compact
 
         let currentContentWidth = window.contentLayoutRect.width
-        if previousState == nil, !compact {
-            if currentContentWidth >= Self.expandedMinimumWidth {
-                UserDefaults.standard.set(currentContentWidth, forKey: Self.expandedWidthKey)
+        if previousState == nil {
+            if compact {
+                window.contentMinSize = NSSize(width: Self.compactMinimumWidth, height: Self.minimumHeight)
+                let targetFrame = frame(forContentWidth: Self.compactContentWidth, window: window)
+                if abs(targetFrame.width - window.frame.width) > 1 {
+                    window.setFrame(targetFrame, display: true)
+                }
+            } else {
+                if currentContentWidth >= Self.expandedMinimumWidth {
+                    UserDefaults.standard.set(currentContentWidth, forKey: Self.expandedWidthKey)
+                }
+                window.contentMinSize = NSSize(width: Self.expandedMinimumWidth, height: Self.minimumHeight)
             }
-            window.contentMinSize = NSSize(width: Self.expandedMinimumWidth, height: Self.minimumHeight)
             return
         }
 

@@ -15,7 +15,7 @@ struct PaneApp: App {
                 .frame(minWidth: 377, minHeight: 640)
                 .background(AdaptiveAppIcon())
         }
-        .defaultSize(width: 1_440, height: 900)
+        .defaultSize(width: 377, height: 900)
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) {
