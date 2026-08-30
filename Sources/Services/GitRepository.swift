@@ -180,6 +180,7 @@ actor GitRepository: GitClient {
         if stdin != nil { process.standardInput = stdinPipe }
         var environment = ProcessInfo.processInfo.environment
         environment["GIT_TERMINAL_PROMPT"] = "0"
+        environment["GIT_OPTIONAL_LOCKS"] = "0"
         environment["LC_ALL"] = "C.UTF-8"
         process.environment = environment
 

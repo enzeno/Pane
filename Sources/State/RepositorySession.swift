@@ -36,6 +36,7 @@ final class RepositorySession {
     private var pendingRefreshKind: RepositoryChangeKind?
     private var indexMutationGeneration = 0
     private var inFlightIndexMutationCount = 0
+    private var indexMutationTail: Task<Void, Never>?
     let syntaxHighlighter = SyntaxHighlighter()
 
     var selectedTab: EditorTab? {
@@ -87,6 +88,8 @@ final class RepositorySession {
 
     func refreshAll() async {
         guard let repository else { return }
+        let statusReadGeneration = indexMutationGeneration
+        let statusReadBeganStable = inFlightIndexMutationCount == 0
         isRefreshing = true
         defer { isRefreshing = false }
         do {
@@ -97,7 +100,11 @@ final class RepositorySession {
             let (loadedStatus, loadedBranches, loadedCommits, loadedFiles) = try await (
                 nextStatus, nextBranches, nextCommits, nextFiles
             )
-            status = loadedStatus
+            applyStatusIfCurrent(
+                loadedStatus,
+                readGeneration: statusReadGeneration,
+                readBeganStable: statusReadBeganStable
+            )
             branches = loadedBranches
             commits = loadedCommits
             await fileIndex.replace(paths: loadedFiles)
@@ -109,14 +116,15 @@ final class RepositorySession {
 
     func refreshStatus() async {
         guard let repository else { return }
-        let generation = indexMutationGeneration
+        let statusReadGeneration = indexMutationGeneration
+        let statusReadBeganStable = inFlightIndexMutationCount == 0
         do {
             let loadedStatus = try await repository.status()
-            guard generation == indexMutationGeneration, inFlightIndexMutationCount == 0 else {
-                scheduleRefresh(for: .index)
-                return
-            }
-            status = loadedStatus
+            applyStatusIfCurrent(
+                loadedStatus,
+                readGeneration: statusReadGeneration,
+                readBeganStable: statusReadBeganStable
+            )
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -124,11 +132,17 @@ final class RepositorySession {
 
     private func refreshWorkingTree() async {
         guard let repository else { return }
+        let statusReadGeneration = indexMutationGeneration
+        let statusReadBeganStable = inFlightIndexMutationCount == 0
         do {
             async let nextStatus = repository.status()
             async let nextFiles = repository.trackedAndUntrackedFiles()
             let (loadedStatus, loadedFiles) = try await (nextStatus, nextFiles)
-            status = loadedStatus
+            applyStatusIfCurrent(
+                loadedStatus,
+                readGeneration: statusReadGeneration,
+                readBeganStable: statusReadBeganStable
+            )
             await fileIndex.replace(paths: loadedFiles)
             if quickOpenPresented { await updateQuickOpen(query: quickOpenQuery) }
             await checkExternalFileChanges()
@@ -414,21 +428,43 @@ final class RepositorySession {
     ) async {
         guard let repository else { return }
         indexMutationGeneration += 1
+        let operationGeneration = indexMutationGeneration
         inFlightIndexMutationCount += 1
         errorMessage = nil
-        do {
-            try await operation(repository)
-            inFlightIndexMutationCount -= 1
-            if inFlightIndexMutationCount == 0 {
-                scheduleRefresh(for: .index)
-            }
-        } catch {
-            inFlightIndexMutationCount -= 1
-            errorMessage = error.localizedDescription
-            if inFlightIndexMutationCount == 0 {
-                await refreshStatus()
+        let predecessor = indexMutationTail
+        let task = Task { @MainActor [weak self] in
+            await predecessor?.value
+            guard let self else { return }
+            do {
+                try await operation(repository)
+                self.finishIndexOperation(generation: operationGeneration, error: nil)
+            } catch {
+                self.finishIndexOperation(generation: operationGeneration, error: error)
             }
         }
+        indexMutationTail = task
+        await task.value
+    }
+
+    private func finishIndexOperation(generation: Int, error: Error?) {
+        inFlightIndexMutationCount = max(0, inFlightIndexMutationCount - 1)
+        if generation == indexMutationGeneration { indexMutationTail = nil }
+        if let error { errorMessage = error.localizedDescription }
+        if inFlightIndexMutationCount == 0 { scheduleRefresh(for: .index) }
+    }
+
+    private func applyStatusIfCurrent(
+        _ loadedStatus: GitStatusSnapshot,
+        readGeneration: Int,
+        readBeganStable: Bool
+    ) {
+        guard readBeganStable,
+              readGeneration == indexMutationGeneration,
+              inFlightIndexMutationCount == 0 else {
+            scheduleRefresh(for: .index)
+            return
+        }
+        if status != loadedStatus { status = loadedStatus }
     }
 
     private func optimisticallyStage(_ change: GitFileChange) {

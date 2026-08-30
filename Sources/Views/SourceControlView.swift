@@ -113,7 +113,7 @@ private struct ChangeRow: View {
             Image(systemName: change.kind.symbolName)
                 .foregroundStyle(color)
                 .frame(width: 16)
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text(change.displayName).lineLimit(1)
                 if !change.parentPath.isEmpty {
                     Text(change.parentPath).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
@@ -129,7 +129,7 @@ private struct ChangeRow: View {
             .help(staged ? "Unstage" : "Stage")
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.vertical, 3)
         .contentShape(Rectangle())
         .onTapGesture { Task { await session.openDiff(change) } }
         .background(Color.primary.opacity(0.001))
@@ -145,4 +145,3 @@ private struct ChangeRow: View {
         }
     }
 }
-
