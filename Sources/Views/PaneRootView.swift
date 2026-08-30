@@ -9,22 +9,34 @@ struct PaneRootView: View {
 
     var body: some View {
         ZStack {
-            if session.rootURL == nil {
-                WelcomeView(session: session)
-            } else {
-                NavigationSplitView(columnVisibility: $columnVisibility) {
-                    VSplitView {
-                        SourceControlView(session: session)
-                            .frame(minHeight: 280)
-                        GraphView(session: session)
-                            .frame(minHeight: 220)
+            NavigationSplitView(columnVisibility: $columnVisibility) {
+                VSplitView {
+                    Group {
+                        if session.rootURL == nil {
+                            StartupSidebarSection(title: "Source Control", systemImage: "arrow.triangle.branch")
+                        } else {
+                            SourceControlView(session: session)
+                        }
                     }
-                    .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 520)
-                } detail: {
+                    .frame(minHeight: 280)
+                    Group {
+                        if session.rootURL == nil {
+                            StartupSidebarSection(title: "Source Control: Graph", systemImage: "point.3.connected.trianglepath.dotted")
+                        } else {
+                            GraphView(session: session)
+                        }
+                    }
+                    .frame(minHeight: 220)
+                }
+                .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 520)
+            } detail: {
+                if session.rootURL == nil {
+                    WelcomeView(session: session)
+                } else {
                     EditorWorkspaceView(session: session)
                 }
-                .navigationSplitViewStyle(.balanced)
             }
+            .navigationSplitViewStyle(.balanced)
 
             if session.quickOpenPresented {
                 QuickOpenView(session: session)
@@ -96,6 +108,25 @@ struct PaneRootView: View {
             Button("OK", role: .cancel) { session.errorMessage = nil }
         } message: {
             Text(session.errorMessage ?? "Unknown error")
+        }
+    }
+}
+
+private struct StartupSidebarSection: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(title).font(.headline)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            Divider()
+            ContentUnavailableView("Open a Repository", systemImage: systemImage)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
