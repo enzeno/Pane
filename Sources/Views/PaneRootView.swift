@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct PaneRootView: View {
     @State private var session = RepositorySession()
     @State private var didRestoreRepository = false
+    @State private var initialRepositoryRestoreInProgress = true
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var editorChromeVisible = false
     @State private var editorRevealTask: Task<Void, Never>?
@@ -66,6 +67,7 @@ struct PaneRootView: View {
         .task {
             guard !didRestoreRepository else { return }
             didRestoreRepository = true
+            defer { initialRepositoryRestoreInProgress = false }
             let launchURLs = ProcessInfo.processInfo.arguments.dropFirst()
                 .filter { $0.hasPrefix("/") }
                 .map { URL(fileURLWithPath: $0) }
@@ -92,7 +94,10 @@ struct PaneRootView: View {
             sidebar
                 .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 520)
         } detail: {
-            if session.rootURL == nil {
+            if initialRepositoryRestoreInProgress {
+                Color.clear
+                    .accessibilityHidden(true)
+            } else if session.rootURL == nil {
                 WelcomeView(session: session)
             } else if session.tabs.isEmpty || !editorChromeVisible {
                 Color.clear
@@ -108,7 +113,10 @@ struct PaneRootView: View {
     private var sidebar: some View {
         VSplitView {
             Group {
-                if session.rootURL == nil {
+                if initialRepositoryRestoreInProgress {
+                    Color.clear
+                        .accessibilityHidden(true)
+                } else if session.rootURL == nil {
                     StartupSidebarSection(title: "Source Control", systemImage: "arrow.triangle.branch")
                 } else {
                     SourceControlView(session: session)
@@ -116,7 +124,10 @@ struct PaneRootView: View {
             }
             .frame(minHeight: 280)
             Group {
-                if session.rootURL == nil {
+                if initialRepositoryRestoreInProgress {
+                    Color.clear
+                        .accessibilityHidden(true)
+                } else if session.rootURL == nil {
                     StartupSidebarSection(title: "Source Control: Graph", systemImage: "point.3.connected.trianglepath.dotted")
                 } else {
                     GraphView(session: session)

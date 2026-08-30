@@ -73,6 +73,9 @@ actor GitRepository: GitClient {
     }
 
     func commits(limit: Int) async throws -> [GraphCommit] {
+        let firstRef = try await run(["for-each-ref", "--count=1", "--format=%(refname)"])
+        guard !firstRef.stdout.isEmpty else { return [] }
+
         let separator = "\u{1f}"
         let result = try await run([
             "log", "--all", "--topo-order", "--date-order", "-n", String(limit),

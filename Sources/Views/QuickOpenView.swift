@@ -70,23 +70,14 @@ struct QuickOpenView: View {
                 .glassEffect(.regular, in: .rect(cornerRadius: 18))
                 .clipShape(.rect(cornerRadius: 18))
                 .shadow(color: .black.opacity(0.28), radius: 34, y: 18)
-                .onKeyPress(.downArrow) {
-                    session.quickOpenSelection = min(session.quickOpenSelection + 1, max(0, session.quickOpenResults.count - 1))
-                    return .handled
-                }
-                .onKeyPress(.upArrow) {
-                    session.quickOpenSelection = max(0, session.quickOpenSelection - 1)
-                    return .handled
-                }
-                .onKeyPress(.escape) {
-                    dismiss()
-                    return .handled
-                }
             }
         }
         .onExitCommand(perform: dismiss)
         .background {
-            QuickOpenKeyMonitor(onDismiss: dismiss)
+            QuickOpenKeyMonitor(
+                onDismiss: dismiss,
+                onMoveSelection: session.moveQuickOpenSelection
+            )
                 .frame(width: 0, height: 0)
         }
         .task {
@@ -103,9 +94,10 @@ struct QuickOpenView: View {
 
 private struct QuickOpenKeyMonitor: NSViewRepresentable {
     let onDismiss: @MainActor () -> Void
+    let onMoveSelection: @MainActor (Int) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onDismiss: onDismiss)
+        Coordinator(onDismiss: onDismiss, onMoveSelection: onMoveSelection)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -121,10 +113,15 @@ private struct QuickOpenKeyMonitor: NSViewRepresentable {
 
     final class Coordinator: @unchecked Sendable {
         private let onDismiss: @MainActor () -> Void
+        private let onMoveSelection: @MainActor (Int) -> Void
         private var monitor: Any?
 
-        init(onDismiss: @escaping @MainActor () -> Void) {
+        init(
+            onDismiss: @escaping @MainActor () -> Void,
+            onMoveSelection: @escaping @MainActor (Int) -> Void
+        ) {
             self.onDismiss = onDismiss
+            self.onMoveSelection = onMoveSelection
         }
 
         func start() {
@@ -133,9 +130,19 @@ private struct QuickOpenKeyMonitor: NSViewRepresentable {
                 let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
                 let togglesQuickOpen = event.charactersIgnoringModifiers?.lowercased() == "p"
                     && (modifiers.contains(.control) || modifiers.contains(.command))
-                guard event.keyCode == 53 || togglesQuickOpen else { return event }
-                Task { @MainActor in self?.onDismiss() }
-                return nil
+                if event.keyCode == 53 || togglesQuickOpen {
+                    Task { @MainActor in self?.onDismiss() }
+                    return nil
+                }
+                if event.keyCode == 125 {
+                    Task { @MainActor in self?.onMoveSelection(1) }
+                    return nil
+                }
+                if event.keyCode == 126 {
+                    Task { @MainActor in self?.onMoveSelection(-1) }
+                    return nil
+                }
+                return event
             }
         }
 

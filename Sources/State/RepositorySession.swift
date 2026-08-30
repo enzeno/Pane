@@ -71,8 +71,26 @@ final class RepositorySession {
             let candidate = GitRepository(rootURL: selectedURL)
             let validated = try await candidate.validatedRoot()
             let repo = GitRepository(rootURL: validated)
-            rootURL = validated
+
+            async let nextStatus = repo.status()
+            async let nextBranches = repo.branches()
+            async let nextCommits = repo.commits(limit: 500)
+            async let nextFiles = repo.trackedAndUntrackedFiles()
+            let (loadedStatus, loadedBranches, loadedCommits, loadedFiles) = try await (
+                nextStatus, nextBranches, nextCommits, nextFiles
+            )
+
+            // Do not expose a repository until its first complete snapshot is ready.
+            // Publishing rootURL early makes the UI render a misleading transient
+            // HEAD / clean / zero-commit state while the Git processes are running.
+            await fileIndex.replace(paths: loadedFiles)
+            refreshTask?.cancel()
+            refreshTask = nil
+            pendingRefreshKind = nil
             repository = repo
+            status = loadedStatus
+            branches = loadedBranches
+            commits = loadedCommits
             tabs.removeAll()
             selectedTabID = nil
             graphLimit = 500
@@ -80,7 +98,7 @@ final class RepositorySession {
             watcher = RepositoryWatcher(url: validated) { [weak self] kind in
                 Task { @MainActor in self?.scheduleRefresh(for: kind) }
             }
-            await refreshAll()
+            rootURL = validated
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -197,6 +215,17 @@ final class RepositorySession {
         quickOpenQuery = query
         quickOpenResults = await fileIndex.search(query)
         quickOpenSelection = min(quickOpenSelection, max(0, quickOpenResults.count - 1))
+    }
+
+    func moveQuickOpenSelection(by offset: Int) {
+        guard !quickOpenResults.isEmpty else {
+            quickOpenSelection = 0
+            return
+        }
+        quickOpenSelection = min(
+            max(quickOpenSelection + offset, 0),
+            quickOpenResults.count - 1
+        )
     }
 
     func openSelectedQuickOpenResult() async {

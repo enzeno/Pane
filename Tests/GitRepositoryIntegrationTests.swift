@@ -2,6 +2,18 @@ import XCTest
 @testable import Pane
 
 final class GitRepositoryIntegrationTests: XCTestCase {
+    func testUnbornRepositoryHasAnEmptyCommitGraph() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("PaneGitUnbornTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try runGit(["init", "-b", "main"], at: root)
+
+        let repository = GitRepository(rootURL: root)
+        let commits = try await repository.commits(limit: 500)
+        XCTAssertTrue(commits.isEmpty)
+    }
+
     func testLargeFileIndexOutputDrainsWithoutBlockingGit() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("PaneGitOutputTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

@@ -25,4 +25,22 @@ final class FileIndexTests: XCTestCase {
         let matches = await index.search("")
         XCTAssertEqual(matches.first?.path, "b.swift")
     }
+
+    @MainActor
+    func testQuickOpenSelectionMovesAndClampsToResults() {
+        let session = RepositorySession()
+        session.quickOpenResults = [
+            FileSearchResult(path: "one.swift", score: 2),
+            FileSearchResult(path: "two.swift", score: 1),
+        ]
+
+        session.moveQuickOpenSelection(by: 1)
+        XCTAssertEqual(session.quickOpenSelection, 1)
+        session.moveQuickOpenSelection(by: 1)
+        XCTAssertEqual(session.quickOpenSelection, 1)
+        session.moveQuickOpenSelection(by: -1)
+        XCTAssertEqual(session.quickOpenSelection, 0)
+        session.moveQuickOpenSelection(by: -1)
+        XCTAssertEqual(session.quickOpenSelection, 0)
+    }
 }
