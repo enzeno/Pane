@@ -1,0 +1,33 @@
+{
+  "originHash" : "027e4516e27b50fec662d767be24b5f3aa0c1b139d77886d6da079a5876fd06c",
+  "pins" : [
+    {
+      "identity" : "codeeditlanguages",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/CodeEditApp/CodeEditLanguages.git",
+      "state" : {
+        "revision" : "32a1ddcb44d0bcf9bdb41ae426fa1bb7198e62fe",
+        "version" : "0.1.21"
+      }
+    },
+    {
+      "identity" : "swifttreesitter",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ChimeHQ/SwiftTreeSitter.git",
+      "state" : {
+        "revision" : "36aa61d1b531f744f35229f010efba9c6d6cbbdd",
+        "version" : "0.9.0"
+      }
+    },
+    {
+      "identity" : "tree-sitter",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tree-sitter/tree-sitter",
+      "state" : {
+        "revision" : "d97db6d63507eb62c536bcb2c4ac7d70c8ec665e",
+        "version" : "0.23.2"
+      }
+    }
+  ],
+  "version" : 3
+}
